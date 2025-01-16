@@ -1,0 +1,440 @@
+import pygame
+import random
+from pygame.locals import *
+
+pygame.init()
+pygame.mixer.init()
+
+# intializations
+width, height = 800, 600
+screen = pygame.display.set_mode((width, height))
+pygame.display.set_caption("Mice & Cheese")
+clock = pygame.time.Clock()
+
+block_size = 50
+background_colour = "#f0ec58"
+FONT = pygame.font.Font(None, 40)
+
+font_path = "Jersey15-Regular.ttf"
+large_font = pygame.font.Font(font_path, 130)
+small_font = pygame.font.Font(font_path, 20)
+
+# start button setup
+start_button_rect = pygame.Rect(420, 410, 200, 100)
+start_button_color = "#be9916"
+start_button_hover_color = "#ad902b"
+start_button_border_color = "#e8c650"
+
+# screen setup
+START_SCREEN = "start_screen"
+CHOOSING_SCREEN = "choosing_screen"
+SCORE_MODE_GAME = "score_mode_game"
+TIME_MODE_GAME = "time_mode_game"
+GAME_OVER_SCREEN = "game_over_screen"
+VICTORY_SCREEN = "victory_screen"
+current_screen = START_SCREEN
+
+# Image Loading
+try:
+    head_images = {
+        "up":pygame.image.load("rat_head_up.jpg"),
+        "down": pygame.image.load("rat_head_down.jpg"),
+        "left": pygame.image.load("rat_head_left.jpg"),
+        "right": pygame.image.load("rat_head_right.jpg"),
+    }
+
+    body_images = {
+        "horizontal": pygame.image.load("rat_body_horizontal.jpg"),
+        "vertical": pygame.image.load("rat_body_vertical.jpg"),
+    }
+
+    tail_images = {
+        "up": pygame.image.load("rat_tail_up.jpg"),
+        "down": pygame.image.load("rat_tail_down.jpg"),
+        "left": pygame.image.load("rat_tail_left.jpg"),
+        "right": pygame.image.load("rat_tail_right.jpg"),
+    }
+
+    cheese_img = pygame.image.load("cheese.jpg")
+    start_screen_background = pygame.image.load("start_screen_background.png")
+    choosing_screen_background = pygame.image.load("choosing_screen_background.png")
+    game_over_background = pygame.image.load("game_over_background.png")
+    knife_img = pygame.image.load("knife.png")
+
+
+except Exception as e:
+    print(f"Error loading images: {e}")
+    pygame.quit()
+
+cheese_img = pygame.transform.scale(cheese_img, (block_size, block_size))
+start_screen_background = pygame.transform.scale(start_screen_background,(width, height))
+choosing_screen_background = pygame.transform.scale(choosing_screen_background, (width, height))
+game_over_background = pygame.transform.scale(game_over_background, (width, height))
+knife_img = pygame.transform.scale(knife_img, (block_size,block_size))
+
+
+for img_dict in [head_images, tail_images]:
+    for key in img_dict:
+        img_dict[key] = pygame.transform.scale(img_dict[key], (block_size, block_size))
+
+for key in body_images:
+    body_images[key] = pygame.transform.scale(body_images[key], (block_size,block_size))
+
+# sounds Loading
+try:
+    button_sound = pygame.mixer.Sound("button.wav")
+    cheese_sound = pygame.mixer.Sound("cheese_sound.wav")
+    game_over_sound = pygame.mixer.Sound("game-over.mp3")
+    win_sound = pygame.mixer.Sound("win.wav")
+    menu_sound = pygame.mixer.Sound("menu.wav")
+    
+except pygame.error as e:
+    print(f"Error loading sound: {e}")
+    pygame.quit()
+
+menu_sound_played = False
+game_sound_played = False
+
+
+DIRECTIONS = {
+    "up": (0,-1),
+    "down": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
+}
+
+rat = [
+    pygame.Rect(5 * block_size, 5 * block_size, block_size, block_size), # head
+    pygame.Rect(4 * block_size, 5 * block_size, block_size, block_size), # body
+    pygame.Rect(3 * block_size, 5 * block_size, block_size, block_size), # tail
+]
+
+# inital direction
+rat_direction = "right"
+
+dead = False
+
+# knife
+knife_speed = 5
+knives = []
+knife_spawn_time = 0
+knife_width = block_size 
+
+score = 0
+start_time = 0
+
+button_played = False
+
+# screen function
+def start_screen_button():
+    global button_played
+
+    screen.blit(start_screen_background, (0, 0))
+
+    mouse_pos = pygame.mouse.get_pos()
+    mouse_pressed = pygame.mouse.get_pressed()
+
+    if start_button_rect.collidepoint(mouse_pos):
+        current_color = start_button_hover_color
+        if mouse_pressed[0] and not button_played:
+            button_played = True
+            button_sound.play()
+            return CHOOSING_SCREEN
+    else:
+        current_color = start_button_color
+
+    pygame.draw.rect(screen, current_color, start_button_rect)
+    pygame.draw.rect(screen, start_button_border_color, start_button_rect, 4)
+
+    
+    start_text = pygame.font.Font(None, 30).render("Start", True, "#000000")
+    start_rect = start_text.get_rect(center = start_button_rect.center)
+
+    screen.blit(start_text, start_rect)
+    
+    return START_SCREEN
+
+
+def mode_choosing_screen():
+    global menu_sound_played
+    if not menu_sound_played:
+        menu_sound.play(-1) 
+        menu_sound_played = True
+
+    screen.blit(choosing_screen_background, (0,0))
+
+    return CHOOSING_SCREEN
+
+
+def game_over_screen():
+    screen.blit(game_over_background, (0, 0))  
+
+    game_over_text = large_font.render("Game Over!", True, (0, 0, 0))  
+    text_width, text_height = game_over_text.get_size()
+    x_position = (width - text_width) / 2 
+    y_position = (height - text_height) / 2.5
+    screen.blit(game_over_text, (x_position, y_position))
+
+    restart_quit_text = pygame.font.Font(font_path, 30).render("Press D to Restart or A to Quit", True, (0, 0, 0))  
+    restart_quit_rect = restart_quit_text.get_rect(center=(width / 2, height * 2 / 3 + 50))  
+    screen.blit(restart_quit_text, restart_quit_rect)
+
+    menu_sound.stop()
+
+
+def victory_screen():
+    screen.blit(game_over_background, (0, 0))
+    text = large_font.render("You Win!", True, (0, 0, 0))
+    text_rect = text.get_rect(center=(width // 2, height // 2 - 50))
+    screen.blit(text, text_rect)
+
+    restart_quit_text = pygame.font.Font(font_path, 30).render("Press D to Restart or A to Quit", True, (0, 0, 0))  
+    restart_quit_rect = restart_quit_text.get_rect(center=(width / 2, height * 2 / 3 + 50))  
+    screen.blit(restart_quit_text, restart_quit_rect)
+
+    menu_sound.stop()
+
+
+# game function setting
+def draw_cheese():
+    x = random.randint(0, (width // block_size) - 1) * block_size
+    y = random.randint(0, (height // block_size)- 1) * block_size
+    return pygame.Rect(x, y, block_size, block_size)
+
+cheese = draw_cheese()
+
+
+def grid_setting():
+    for x in range(0, width, block_size):
+        for y in range(0, height, block_size):
+            square = pygame.Rect(x, y, block_size, block_size)
+            pygame.draw.rect(screen, background_colour, square, 1)
+
+def draw_rat():
+    for i, segment in enumerate(rat):
+        if i == 0: # head
+            screen.blit(head_images[rat_direction], segment)
+        elif i == len(rat) - 1: 
+            tail_dir = get_tail_direction()
+            screen.blit(tail_images[tail_dir],segment)
+        elif 0 < i < len(rat) - 1:
+            body_img = get_body_image(i)
+            screen.blit(body_img, segment)
+
+def get_tail_direction():
+    tail = rat[-1]
+    prev = rat[-2]
+    dx, dy = prev.x - tail.x, prev.y - tail.y
+    if dx > 0:
+        return "right"
+    elif dx < 0:
+        return "left"
+    elif dy > 0:
+        return "down"
+    else:
+        return "up"
+
+def get_body_image(index):
+    prev = rat[index - 1]
+    next_ = rat[index + 1]
+    if prev.x == next_.x:  # Vertical alignment
+        return body_images["vertical"]
+    else:  # Horizontal alignment
+        return body_images["horizontal"]
+
+
+def update_rat():
+    global rat, cheese, score
+    head = rat[0]
+    new_head = pygame.Rect(
+        head.x + DIRECTIONS[rat_direction][0] * block_size,
+        head.y + DIRECTIONS[rat_direction][1] * block_size,
+        block_size,
+        block_size
+    )
+    rat.insert(0, new_head)
+    if new_head.colliderect(cheese):
+        cheese = draw_cheese()
+        score += 1
+        cheese_sound.play() 
+    else:
+        rat.pop()  # Remove the tail
+
+def check_collisions():
+    global dead
+    head = rat[0]
+    # Check wall collisions
+    if head.x < 0 or head.x >= width or head.y < 0 or head.y >= height:
+        dead = True
+    # Check self-collision
+    if head.collidelist(rat[1:]) != -1:
+        dead = True
+
+# reset function
+def reset_game():
+    global DIRECTIONS, rat, rat_direction, cheese, dead, knives, score, start_time
+    DIRECTIONS = {
+    "up": (0,-1),
+    "down": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
+    }
+
+    rat = [
+        pygame.Rect(5 * block_size, 5 * block_size, block_size, block_size), # head
+        pygame.Rect(4 * block_size, 5 * block_size, block_size, block_size), # body
+        pygame.Rect(3 * block_size, 5 * block_size, block_size, block_size), # tail
+    ]
+
+    rat_direction = "right"
+
+    dead = False
+    knives = []
+    cheese = draw_cheese()
+    score = 0
+    start_time = pygame.time.get_ticks()
+
+
+# knife setting
+def spawn_knives():
+    global knife_spawn_time
+    if pygame.time.get_ticks() - knife_spawn_time > 15000:  # 15 seconds delay
+        knife_spawn_time = pygame.time.get_ticks()
+        knife = pygame.Rect(-knife_width, random.randint(0, height - block_size), block_size, block_size)
+        knives.append(knife)
+
+def update_knives():
+    global dead
+    
+    for knife in knives:
+        knife.x += knife_speed  # move the knife to the right
+        if knife.x > width:  # if knife goes off the screen, mark for removal
+            knives.append(knife)
+        if knife.colliderect(rat[0]):  # check if the knife hits the rat's head
+            dead = True
+        screen.blit(knife_img, (knife.x, knife.y))
+
+
+# main loop
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP and rat_direction != "down":
+                rat_direction = "up"
+            elif event.key == pygame.K_DOWN and rat_direction != "up":
+                rat_direction = "down"
+            elif event.key == pygame.K_LEFT and rat_direction != "right":
+                rat_direction = "left"
+            elif event.key == pygame. K_RIGHT and rat_direction != "left":
+                rat_direction = "right"
+
+            # mode choosing keyboard setting
+            if current_screen == CHOOSING_SCREEN:
+                if event.key == pygame.K_s:
+                    current_screen = SCORE_MODE_GAME
+                    button_played = True
+                    button_sound.play()
+                    reset_game()
+                elif event.key == pygame.K_t:
+                    current_screen = TIME_MODE_GAME
+                    button_played = True
+                    button_sound.play()
+                    reset_game()
+
+            # game over keyboard setting
+            if current_screen == GAME_OVER_SCREEN and event.key == pygame.K_d:
+                current_screen = CHOOSING_SCREEN
+                button_played = True
+                button_sound.play()
+                menu_sound.play()
+            elif current_screen == GAME_OVER_SCREEN and event.key == pygame.K_a:
+                running = False
+                button_played = True
+                button_sound.play()
+
+            if current_screen == VICTORY_SCREEN and event.key == pygame.K_d:
+                current_screen = CHOOSING_SCREEN
+                button_played = True
+                button_sound.play()
+                menu_sound.play()
+            elif current_screen == VICTORY_SCREEN and event.key == pygame.K_a:
+                running = False
+                button_played = True
+                button_sound.play()
+            
+
+    if current_screen == START_SCREEN:
+        current_screen = start_screen_button()
+    
+    elif current_screen == CHOOSING_SCREEN:
+        current_screen = mode_choosing_screen()
+    
+    elif current_screen == SCORE_MODE_GAME:
+        screen.fill(background_colour)
+        grid_setting()
+        draw_rat()
+        screen.blit(cheese_img, (cheese.x, cheese.y))
+        update_rat()
+        spawn_knives()
+        update_knives()
+        check_collisions()
+
+        # text
+        score_text = small_font.render(f"Score: {score}/15", True, (0, 0, 0))
+        screen.blit(score_text, (10, 10))
+
+        # score setting
+        if score >= 15:
+            current_screen = VICTORY_SCREEN
+            win_sound.play()
+
+        if dead:
+            game_over_sound.play()
+            current_screen = GAME_OVER_SCREEN
+
+    elif current_screen == TIME_MODE_GAME:
+        screen.fill(background_colour)
+        grid_setting()
+        draw_rat()
+        screen.blit(cheese_img, (cheese.x, cheese.y))
+        update_rat()
+        spawn_knives()
+        update_knives()
+        check_collisions()
+
+        # timer setting
+        elapsed_time = (pygame.time.get_ticks() - start_time) // 1000
+        time_left = 30 - elapsed_time
+
+        if time_left <= 0:
+            if score >= 10:
+                current_screen = VICTORY_SCREEN
+                win_sound.play()
+            else:
+                game_over_sound.play()
+                current_screen = GAME_OVER_SCREEN
+
+        # text
+        score_text = small_font.render(f"Score: {score}", True, (0, 0, 0))
+        time_text = small_font.render(f"Time: {time_left}", True, (0, 0, 0))
+        screen.blit(score_text, (10, 10))
+        screen.blit(time_text, (10, 40))
+
+        if dead:
+            game_over_sound.play()
+            current_screen = GAME_OVER_SCREEN
+
+    elif current_screen == GAME_OVER_SCREEN:
+        game_over_screen()
+
+    elif current_screen == VICTORY_SCREEN:
+        victory_screen()
+
+    pygame.display.flip()
+    clock.tick(7) # speed
+
+pygame.quit()
